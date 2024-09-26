@@ -19,6 +19,8 @@ This project was inspired by the concept of **expansiveness of human posture** i
 Posture2Melody/
 │
 ├── mediadata/              # Sample posture data
+│ ├── landmark/             # The human posture landmark data extracted from video file using `mediapipe`
+│ ├── mel_spectrogram/      # The mel-spectrogram data extracted from audio file using `librosa`
 ├── posture2melody.ipynb    # GAN-Transformer model architecture
 └── README.md               # Project overview
 ```
