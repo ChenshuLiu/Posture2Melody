@@ -15,4 +15,10 @@ This project was inspired by the concept of **expansiveness of human posture** i
 - **Therapeutic Potential**: The generated melodies could be used to help regulate emotional states and reduce anxiety, serving as an intervention tool for emotional therapy.
 
 ## Project Structure
-Posture2Melody/ │ ├── mediadata/ # Sample posture data ├── posture2melody.ipynb # GAN-Transformer model architecture └── README.md # Project overview
+'''
+Posture2Melody/
+│
+├── mediadata/              # Sample posture data
+├── posture2melody.ipynb    # GAN-Transformer model architecture
+└── README.md               # Project overview
+'''
