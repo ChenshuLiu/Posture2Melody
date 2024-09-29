@@ -6,6 +6,16 @@ from torch.utils.data import Dataset, DataLoader
 import os
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+# Define model parameters
+hidden_dim = 32
+nhead = 4
+num_layers = 3
+num_source_features = 99
+num_mel_bins = 128
+num_epochs = 50
+batch_size = 3 # ERROR: batch_size larger than 4 will return nan loss (RuntimeError: all elements of input should be between 0 and 1)
+
+# Step 1: Loading Data
 class PaddedDataset(Dataset): # unifying across the entire dataset
     def __init__(self, input_file_dir, output_file_dir):
         # Load the input and output datasets
@@ -52,11 +62,9 @@ main_dir = './mediadata'
 landmark_paths = [os.path.join(main_dir, 'landmark', landmark_name) for landmark_name in os.listdir(os.path.join(main_dir, 'landmark')) if landmark_name != '.DS_Store']
 mel_paths = [os.path.join(main_dir, 'mel_spectrogram', landmark_name) for landmark_name in os.listdir(os.path.join(main_dir, 'mel_spectrogram')) if landmark_name != '.DS_Store']
 dataset = PaddedDataset(landmark_paths, mel_paths)
+dataloader = DataLoader(dataset, batch_size=batch_size)
 
-# Create the DataLoader
-dataloader = DataLoader(dataset, batch_size=3)
-
-# Step 2: Define the Transformer Encoder-Decoder Model
+# Step 2: ransformer Encoder-Decoder & Discriminator Model
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super(PositionalEncoding, self).__init__()
@@ -117,16 +125,56 @@ class TransformerModel(nn.Module):
         output = self.decoder(tgt, memory, tgt_key_padding_mask, memory_key_padding_mask, tgt_mask)
         return output
 
-# Define model parameters
-hidden_dim = 32
-nhead = 4
-num_layers = 3
-num_source_features = 99
-num_mel_bins = 128
+class CNNDiscriminator(nn.Module):
+    def __init__(self, num_features = 128, num_filters=64, kernel_size=3, stride=1, hidden_dim=128, num_classes=1, dropout=0.3):
+        """
+        Args:
+            num_features (int): Number of features at each time step in the sequence.
+            num_filters (int): Number of filters for the convolutional layers.
+            kernel_size (int): Size of the convolutional kernel.
+            stride (int): Stride size for the convolution.
+            hidden_dim (int): Number of units in the fully connected layer.
+            num_classes (int): Number of output classes (1 for real/fake).
+            dropout (float): Dropout probability.
+        """
+        super(CNNDiscriminator, self).__init__()
+
+        # Convolutional layers to extract temporal features
+        self.conv1 = nn.Conv1d(in_channels=num_features, out_channels=num_filters, kernel_size=kernel_size, stride=stride, padding=1)
+        self.conv2 = nn.Conv1d(in_channels=num_filters, out_channels=num_filters * 2, kernel_size=kernel_size, stride=stride, padding=1)
+        self.conv3 = nn.Conv1d(in_channels=num_filters * 2, out_channels=num_filters * 4, kernel_size=kernel_size, stride=stride, padding=1)
+
+        # Fully connected layer for classification
+        self.fc1 = nn.Linear(num_filters * 4, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, num_classes)
+        self.dropout = nn.Dropout(dropout)
+        self.sigmoid = nn.Sigmoid()  # Sigmoid for binary classification (real/fake)
+
+    def forward(self, x):
+        """
+        input: x (torch.Tensor): Input tensor of shape [batch_size, num_frames, num_features].
+        """
+        # Reshape the input for 1D convolutions: [batch_size, num_features, num_frames]
+        x = x.permute(0, 2, 1)
+
+        # Apply convolutional layers with activation
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+
+        # Global average pooling: [batch_size, num_filters*4, 1] -> [batch_size, num_filters*4]
+        x = torch.mean(x, dim=2)
+
+        # Fully connected layers
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return self.sigmoid(x)  # Output probability
 
 encoder = TransformerEncoder(hidden_dim, nhead, num_layers, num_source_features)
 decoder = TransformerDecoder(hidden_dim, nhead, num_layers, num_mel_bins)
 model = TransformerModel(encoder, decoder)
+discriminator = CNNDiscriminator()
 
 # Step 3: Training the Model
 class StableMSELoss(nn.Module):
@@ -140,12 +188,13 @@ class StableMSELoss(nn.Module):
         # Adding epsilon to prevent NaN when computing mean or sum
         return torch.mean(loss + self.eps)
 
-# Usage
-criterion = StableMSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+generator_criterion = StableMSELoss()
+discriminator_criterion = nn.BCELoss()
+generator_optimizer = optim.Adam(model.parameters(), lr=0.001)
+discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=0.002, betas=(0.5, 0.999))
 
-num_epochs = 10 
 model.train()  # Set model to training mode
+discriminator.train()
 
 for epoch in range(num_epochs):
     total_loss = 0  # Variable to accumulate loss
@@ -171,28 +220,55 @@ for epoch in range(num_epochs):
         print(torch.any(torch.isnan(tgt_mask)), "Check for NaNs in tgt_mask")
 
         # Zero the gradients
-        optimizer.zero_grad()
+        generator_optimizer.zero_grad()
+        discriminator_optimizer.zero_grad()
 
         output = model(input_seq, target_seq, 
                        src_key_padding_mask=input_padding_mask, 
                        tgt_key_padding_mask=target_padding_mask, 
                        memory_key_padding_mask=input_padding_mask,
                        tgt_mask = tgt_mask)
+    
+        # Transformer-generated content, typically of shape [batch_size, seq_len, feature_dim]
+        generated_content = output  # Replace with actual transformer output
+        # Ground truth sequence, typically of shape [batch_size, seq_len, feature_dim]
+        groundtruth_content = target_seq  # Replace with actual ground truth data
+
+        # Pass through discriminator
+        real_prob = discriminator(groundtruth_content)  # Should be close to 1
+        fake_prob = discriminator(generated_content.detach())  # Should be close to 0
+
+        real_labels = torch.ones(real_prob.size(0), 1).to(device)  # Real labels = 1
+        fake_labels = torch.zeros(fake_prob.size(0), 1).to(device)  # Fake labels = 0
 
         # Calculate loss
-        loss = criterion(output, target_seq)  # Modify if needed based on your output processing
+        generator_loss = generator_criterion(output, target_seq)
+        real_loss = discriminator_criterion(real_prob, real_labels)
+        fake_loss = discriminator_criterion(fake_prob, fake_labels)
+        discriminator_loss = (real_loss + fake_loss) / 2
         # print(f"loss is {loss}")
         # print(torch.isinf(loss))
-        total_loss += loss.item()
+        total_loss += generator_loss.item() + discriminator_loss.item()
 
         # Clip gradients
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         # Backward pass and optimization
-        loss.backward()
-        optimizer.step()
+        generator_loss.backward()
+        discriminator_loss.backward()
+        generator_optimizer.step()
+        discriminator_optimizer.step()
         break
 
     # Print average loss for the epoch
     avg_loss = total_loss / len(dataloader)
     print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {avg_loss:.4f}')
+    model_dir = './model'
+    if (epoch + 1) % 5 == 0: # saving every 5 epochs
+        model_save_dir = os.path.join(model_dir, f"transformer_discriminator_epoch{epoch+1}.pth")
+        torch.save({
+            'transformer_state_dict': model.state_dict(),
+            'discriminator_state_dict': discriminator.state_dict(),
+            'transformer_optimizer_state_dict': generator_optimizer.state_dict(),
+            'discriminator_optimizer_state_dict': discriminator_optimizer.state_dict()
+        }, model_save_dir)
