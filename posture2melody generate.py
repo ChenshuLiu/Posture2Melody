@@ -8,8 +8,9 @@ import os
 import cv2
 import pandas as pd
 from IPython.display import Audio
+import soundfile as sf
 
-vid_dir = '/Users/liuchenshu/Documents/Research/Posture2Melody/mediadata/video/A good time on vacation _Alexander A ！.mp4'
+vid_dir = '/Users/liuchenshu/Documents/Research/Posture2Melody/mediadata/test.mp4'
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # Step1: read in video and extract landmark information
@@ -134,6 +135,32 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]
         return x
 
+def pad_sequences_to_max_length(sequence, max_len, padding_value=0):
+    """
+    Pad each sequence in the input list to the specified max_len.
+
+    Returns:
+        torch.Tensor: Padded sequences tensor of shape (batch_size, max_len, feature_dim).
+        torch.Tensor: Padding mask tensor of shape (batch_size, max_len).
+    """
+    # Pad each sequence to max_len
+    seq_len = sequence.size(1)  # Length of the sequence
+    feature_dim = sequence.size(2)  # Number of features
+
+    # Create the padding to reach max_len
+    if seq_len < max_len:
+        # Create padding of shape (max_len - seq_len, feature_dim)
+        pad = torch.full((1, max_len - seq_len, feature_dim), padding_value)
+        padded_seq = torch.cat([sequence, pad], dim=1)
+    else:
+        # Truncate if necessary (optional, for safety)
+        padded_seq = sequence[:max_len]
+    
+    # Create the padding mask (True for padded positions, False for real data)
+    padding_mask = torch.cat([torch.zeros(seq_len), torch.ones(max_len - seq_len)]).bool()
+
+    return padded_seq, padding_mask.unsqueeze(0) # padding_mask should have shape [batch_size, seq_len]
+
 class TransformerEncoder(nn.Module):
     def __init__(self, hidden_dim, nhead, num_layers, n_features):
         super(TransformerEncoder, self).__init__()
@@ -159,15 +186,21 @@ class TransformerDecoder(nn.Module):
         self.fc = nn.Linear(hidden_dim, mel_dim)
 
     def forward(self, tgt, memory, tgt_key_padding_mask=None, memory_key_padding_mask=None, tgt_mask=None):
+        print(f"tgt in decoder has shape {tgt.shape}")
         tgt_emb = self.embedding(tgt)
         tgt_emb = self.pos_encoder(tgt_emb)
-        tgt_emb = tgt_emb.transpose(0, 1)  # Shape: [n_frame, batch_size, hidden_dim]
+        print(f"tgt_emb has shape {tgt_emb.shape}")
+        #tgt_emb = tgt_emb.transpose(0, 1)
+        print(f"tgt_emb within the decoder has shape {tgt_emb.shape}")
+        print(f"memory within the decoder has shape {memory.transpose(0, 1).shape}")
         output = self.transformer_decoder(tgt_emb, memory.transpose(0, 1),
                                           tgt_key_padding_mask=tgt_key_padding_mask,
                                           memory_key_padding_mask=memory_key_padding_mask,
                                           tgt_mask=tgt_mask)
+        print(f"output shape in decoder is {output.shape}")
         output = self.fc(output)
-        return output.transpose(0, 1)  # Shape: [batch_size, n_frame, mel_dim]
+        print(f"output shape in decoder is {output.shape}")
+        return output
 
 class TransformerModel(nn.Module):
     def __init__(self, encoder, decoder):
@@ -188,7 +221,7 @@ def generate_square_subsequent_mask(size):
     mask = torch.tril(torch.ones(size, size)).bool()  # Upper triangular mask
     return mask
 
-def generate_sequence(transformer_model, src, max_length=2000, start_token=None, end_token=None, device='cpu'):
+def generate_sequence(transformer_model, src, max_length=3, start_token=None, end_token=None, device='cpu'):
     """
     Generate a sequence using a transformer model in evaluation mode.
     
@@ -207,33 +240,55 @@ def generate_sequence(transformer_model, src, max_length=2000, start_token=None,
     
     # Move source to the same device as the model
     src = src.to(device)
+    padded_src, src_key_padded_mask = pad_sequences_to_max_length(src, max_len = 2000)
+    #print(f"the padded_src has type: {padded_src.shape}") # tuple
+    print(f"padding mask is {src_key_padded_mask.shape}")
 
     # Encode the source sequence
-    memory = transformer_model.encoder(src)
+    memory = transformer_model.encoder(padded_src, src_key_padded_mask)
+    print(f"shape of memory is {memory.shape}")
 
     # Initialize the target sequence with the start token
     if start_token is None:
         # Create a tensor of zeros as the initial token if no start token is provided
         tgt = torch.zeros(1, num_mel_bins).unsqueeze(0).to(device)  # Shape [1, 1, num_features]
+        tgt_mask = torch.triu(torch.ones((1, 1)) * float('-inf'), diagonal=1)
     else:
         tgt = start_token.unsqueeze(0).to(device)  # Shape [1, 1, num_features]
 
     # Prepare a list to store generated tokens
-    generated_sequence = [tgt.squeeze(0)]
+    generated_sequence = [tgt]
+    #tgt_mask = torch.zeros((2000, 2000), dtype = torch.bool)
 
     for _ in range(max_length):
         # Run the transformer decoder with the current target sequence and encoded memory
-        tgt_mask = generate_square_subsequent_mask(num_mel_bins).to(device)
-        output = transformer_model.decoder(tgt, memory, tgt_mask=tgt_mask)
+        #padded_tgt, tgt_key_padding_mask = pad_sequences_to_max_length(tgt, max_len = 2000)
+        #tgt_key_padding_mask = None
+        output = transformer_model.decoder(tgt, memory, 
+                                           tgt_key_padding_mask = None,
+                                           memory_key_padding_mask = src_key_padded_mask,
+                                           tgt_mask=tgt_mask)
 
         # Get the last generated token (the last output position)
-        next_token = output[-1, :].unsqueeze(0)  # Shape [1, num_features]
+        #print(f"the output is {output}!!!!!!")
+        #print(f"the shape of the output is {output.shape}")
+        next_token = output[-1, :, :].unsqueeze(0)
+        #print(f"the next token is {output[-1, :, :]}")
+        #print(f"shape of next_token is {next_token.shape}")
         
         # Append the next token to the generated sequence
         generated_sequence.append(next_token)
+        #print(f"tgt has shape: {tgt.shape}")
 
         # Update the target sequence by appending the new token
         tgt = torch.cat((tgt, next_token), dim=0)  # Append the token to the current target sequence
+        print(f"tgt after concatenation is {tgt}")
+        #print(f"tgt dimension 0 is {tgt.size(0)}")
+        #print(f"shape of tgt is {tgt.shape}")
+        tgt_mask = generate_square_subsequent_mask(tgt.size(0)).to(device)
+        tgt_mask = torch.triu(torch.ones((tgt.size(0), tgt.size(0))) * float('-inf'), diagonal=1)
+        #print(f"shape of tgt_mask is {tgt_mask.shape}")
+        #print(f"tgt_maks is {tgt_mask}")
         
         # Check if the generated token is the end-of-sequence token (if specified)
         if end_token is not None and (next_token == end_token).all():
@@ -247,12 +302,12 @@ def generate_sequence(transformer_model, src, max_length=2000, start_token=None,
 encoder = TransformerEncoder(hidden_dim=hidden_dim, nhead=nhead, num_layers=num_layers, n_features=num_source_features)
 decoder = TransformerDecoder(hidden_dim=hidden_dim, nhead=nhead, num_layers=num_layers, mel_dim=num_mel_bins)
 transformer_generator = TransformerModel(encoder, decoder)
-checkpoint = torch.load('./model/transformer_discriminator_epoch50.pth')
+checkpoint = torch.load('./model/transformer_discriminator_epoch10.pth')
 transformer_generator.load_state_dict(checkpoint['transformer_state_dict'])
 #transformer_generator.eval()
 with torch.no_grad():
     #output = transformer_generator(input_landmark_data)
-    output = generate_sequence(transformer_generator, input_landmark_data_tensor, device=device)
+    output = generate_sequence(transformer_generator, input_landmark_data_tensor, device=device).transpose(0, 1).squeeze(0)
     print(output.shape)
 
 # Step3: convert mel-spectogram data to audio
@@ -263,6 +318,9 @@ def mel_to_audio(mel_spectrogram, sr = 22050, n_fft = 2048, n_iter = 1):
     n_fft: the length of segments to be fourier transformed
     n_iter: number of iterations to run
     '''
+    if isinstance(mel_spectrogram, torch.Tensor): # sometimes input are torch tensors
+        mel_spectrogram = mel_spectrogram.cpu().numpy()
+
     # Inverse Mel-spectrogram to STFT
     stft_spectrogram = librosa.feature.inverse.mel_to_stft(mel_spectrogram.T, sr=sr, n_fft=n_fft)
     # Reconstruct the waveform using Griffin-Lim algorithm
@@ -271,4 +329,5 @@ def mel_to_audio(mel_spectrogram, sr = 22050, n_fft = 2048, n_iter = 1):
     return waveform
 
 waveform = mel_to_audio(output)
+sf.write('reconstructed_audio.wav', waveform, samplerate=22050)
 Audio(waveform, rate=22050)
