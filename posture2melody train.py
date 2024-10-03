@@ -12,14 +12,14 @@ nhead = 4
 num_layers = 3
 num_source_features = 99
 num_mel_bins = 128
-num_epochs = 50
-batch_size = 4 # ERROR: batch_size larger than 4 will return nan loss (RuntimeError: all elements of input should be between 0 and 1)
+num_epochs = 10
+batch_size = 3 # ERROR: batch_size larger than 4 will return nan loss (RuntimeError: all elements of input should be between 0 and 1)
 generator_lr = 1e-7
 discriminator_ls = 1e-2
 
 # Step 1: Loading Data
 class PaddedDataset(Dataset): # unifying across the entire dataset
-    def __init__(self, input_file_dir, output_file_dir):
+    def __init__(self, input_file_dir, output_file_dir, max_input_length = None, max_output_length = None):
         # Load the input and output datasets
         self.input_file_dir = input_file_dir
         self.output_file_dir = output_file_dir
@@ -30,9 +30,13 @@ class PaddedDataset(Dataset): # unifying across the entire dataset
         for output_dir in self.output_file_dir:
             self.outputs.append(np.load(output_dir))
 
+        if max_input_length is not None and max_output_length is not None: # when specified the maximum length to unify
+            self.max_input_len = max_input_length
+            self.max_output_len = max_output_length
+        else:
         # Calculate the maximum length across the whole dataset for inputs and outputs (NUCLEAR option!!!)
-        self.max_input_len = max(inp.shape[0] for inp in self.inputs)
-        self.max_output_len = max(out.shape[0] for out in self.outputs)
+            self.max_input_len = max(inp.shape[0] for inp in self.inputs)
+            self.max_output_len = max(out.shape[0] for out in self.outputs)
 
     def __len__(self):
         return len(self.input_file_dir)
@@ -43,12 +47,14 @@ class PaddedDataset(Dataset): # unifying across the entire dataset
 
         # Pad the input sequence to max_input_len
         padded_input = torch.cat([input_seq, torch.zeros(self.max_input_len - input_seq.size(0), input_seq.size(1))], dim=0)
+        print(f"Shape of padded input_seq is {padded_input.shape}")
 
         # Create input mask
         input_mask = (padded_input.sum(dim=1) != 0)  # Shape: (max_input_len, )
 
         # Pad the output sequence to max_output_len
         padded_output = torch.cat([output_seq, torch.zeros(self.max_output_len - output_seq.size(0), output_seq.size(1))], dim=0)
+        print(f"Shape of padded output_seq is {padded_output.shape}")
 
         # Create output mask
         output_mask = (padded_output.sum(dim=1) != 0)  # Shape: (max_output_len, )
@@ -63,7 +69,7 @@ class PaddedDataset(Dataset): # unifying across the entire dataset
 main_dir = './mediadata'  
 landmark_paths = [os.path.join(main_dir, 'landmark', landmark_name) for landmark_name in os.listdir(os.path.join(main_dir, 'landmark')) if landmark_name != '.DS_Store']
 mel_paths = [os.path.join(main_dir, 'mel_spectrogram', landmark_name) for landmark_name in os.listdir(os.path.join(main_dir, 'mel_spectrogram')) if landmark_name != '.DS_Store']
-dataset = PaddedDataset(landmark_paths, mel_paths)
+dataset = PaddedDataset(landmark_paths, mel_paths, max_input_length=2000, max_output_length=2000)
 dataloader = DataLoader(dataset, batch_size=batch_size)
 
 # Step 2: ransformer Encoder-Decoder & Discriminator Model
