@@ -3,9 +3,9 @@
 ## Table of Contents
 1. [TLDR](#TLDR)
 2. [Motivation](#motivation)
-    2.1 [A Journey into the Interplay of Sound and Emotion](#a-journey-into-the-interplay-of-sound-and-emotion)
-    2.2 [The Genesis of the Idea: Music as an Emotional Regulator](#the-genesis-of-the-idea-music-as-an-emotional-regulator)
-    2.3 [Future Vision: Music as a Bridge to Emotional Harmony](#future-vision-music-as-a-bridge-to-emotional-harmony)
+    1. [A Journey into the Interplay of Sound and Emotion](#a-journey-into-the-interplay-of-sound-and-emotion)
+    2. [The Genesis of the Idea: Music as an Emotional Regulator](#the-genesis-of-the-idea-music-as-an-emotional-regulator)
+    3. [Future Vision: Music as a Bridge to Emotional Harmony](#future-vision-music-as-a-bridge-to-emotional-harmony)
 3. [Features](#features)
 4. [Repo Structure](#repo-structure)
 
