@@ -12,7 +12,9 @@
 ## Motivation
 “What if music could do more than just evoke feelings? What if it could actually shape our inner emotional landscape?” This question has driven my exploration into the interconnectedness of sound, psychological well-being, and human emotions. [Carl G. Jung](https://en.wikipedia.org/wiki/Carl_Jung), the renowned Swiss psychiatrist, held a deep belief in the power of [mandalas](https://www.britannica.com/topic/mandala-diagram) for psychological therapy. In Jung’s view, mandalas were not just artistic creations but symbolic representations of the human psyche, reflecting the inner self and serving as tools for achieving psychological balance. He often used mandalas in therapy to help individuals integrate different aspects of their consciousness and reach a state of inner harmony. Jung believed that these geometric patterns, found across various cultures and spiritual traditions, could connect a person’s conscious and unconscious minds, leading to self-discovery and healing.
 
+<center>
 ![Carl Jung and Mandalas](https://i0.wp.com/carljungdepthpsychologysite.blog/wp-content/uploads/2014/01/65c91-temple.jpg?ssl=1)
+</center>
 
 What intrigued me even more was a discovery made by acoustic physicist John Stuart Reid. Reid demonstrated that mandalas could be created through pure sound waves, following the principles of _Cymatics_—the study of sound wave phenomena—proposed by Hans Jenny. Through Reid’s experiment, it became evident that the seemingly abstract mandalas of Jungian psychology could be reproduced using sound vibrations, suggesting a fascinating link between visual symbols of the mind and the physical world of acoustic waves.
 
