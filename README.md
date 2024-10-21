@@ -12,7 +12,7 @@
 ## TLDR
 **Posture2Melody** is a project that uses a **GAN-Transformer-based architecture** to generate melodies from human postures. Inspired by the idea that body postures, specifically **expansiveness of human posture**, reflects emotional states, this project seeks to create a seamless interaction between bodily movement and music. Whether it’s through dance or everyday postures, Posture2Melody transforms these movements into melodies, potentially acting as an emotional therapy tool. By synchronizing bodily movement and music, Posture2Melody seeks to develop a creative technique that could be used in **emotional therapy**.
 
-![Graphical Abstract]('/Users/liuchenshu/Documents/Research/Posture2Melody/Posture2Melody Pipeline.png')
+![Graphical Abstract]('Posture2Melody Pipeline.png')
 
 ## Motivation
 
